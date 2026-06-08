@@ -7,7 +7,13 @@ module.exports = {
     extend: {
       colors: {
         slate: {
-          950: '#020617',
+          950: '#0A0E1A',
+        },
+        guardian: {
+          bg: '#0A0E1A',
+          card: '#131929',
+          accent: '#00BCD4',
+          danger: '#FF3B5C',
         },
       },
     },

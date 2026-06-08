@@ -1,7 +1,17 @@
-import React, { useState } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator, Image } from 'react-native';
-import { Droplet, Lock, Mail, ArrowRight, Shield, Activity as ActivityIcon } from 'lucide-react-native';
-import { router, Link } from 'expo-router';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  View,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  ScrollView,
+  ActivityIndicator,
+  Image,
+  KeyboardAvoidingView,
+  Platform,
+} from 'react-native';
+import { Lock, Mail, ArrowRight, Shield, Activity as ActivityIcon, Eye, EyeOff, Check } from 'lucide-react-native';
+import { router } from 'expo-router';
 import { useAuth } from '../context/AuthContext';
 
 export default function LoginScreen() {
@@ -9,22 +19,37 @@ export default function LoginScreen() {
   const [loading, setLoading] = useState(false);
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [rememberMe, setRememberMe] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const emailRef = useRef<TextInput | null>(null);
+
+  useEffect(() => {
+    const t = setTimeout(() => emailRef.current?.focus(), 200);
+    return () => clearTimeout(t);
+  }, []);
 
   const handleLogin = async () => {
+    setError(null);
     setLoading(true);
     try {
-      await login(email, password);
+      await login(email, password, rememberMe);
       // Redirection is handled by _layout.tsx
     } catch (e) {
-      console.error(e);
+      const message = e instanceof Error ? e.message : 'Erreur de connexion';
+      setError(message);
     } finally {
       setLoading(false);
     }
   };
 
   return (
-    <ScrollView className="flex-1 bg-slate-950" contentContainerStyle={{ flexGrow: 1 }}>
-      <View className="flex-1 p-8 justify-center">
+    <KeyboardAvoidingView
+      className="flex-1 bg-slate-950"
+      behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+    >
+      <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={{ flexGrow: 1 }}>
+        <View className="flex-1 p-8 justify-center">
         
         {/* Glow Effects (Simulated with views) */}
         <View className="absolute top-0 right-0 w-64 h-64 bg-cyan-500/10 rounded-full blur-3xl" />
@@ -51,6 +76,14 @@ export default function LoginScreen() {
         <View className="bg-slate-900 rounded-3xl p-8 border border-slate-800 shadow-2xl">
           <Text className="text-white text-2xl font-black mb-8 tracking-tight">System Login</Text>
 
+          {error && (
+            <View className="bg-red-500/10 border border-red-500/20 p-4 rounded-2xl mb-6">
+              <Text className="text-red-500 text-[10px] font-black uppercase tracking-widest text-center">
+                {error}
+              </Text>
+            </View>
+          )}
+
           <View className="space-y-6">
             <View>
               <Text className="text-[10px] font-black text-slate-500 uppercase tracking-[2px] mb-3">Operator Email</Text>
@@ -59,10 +92,15 @@ export default function LoginScreen() {
                   <Mail size={20} color="#475569" />
                 </View>
                 <TextInput 
+                  ref={(r) => {
+                    emailRef.current = r;
+                  }}
                   value={email}
                   onChangeText={setEmail}
                   placeholder="name@example.com"
                   placeholderTextColor="#334155"
+                  keyboardType="email-address"
+                  autoCapitalize="none"
                   className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl py-4 pl-14 pr-4 font-bold"
                 />
               </View>
@@ -80,13 +118,42 @@ export default function LoginScreen() {
                   <Lock size={20} color="#475569" />
                 </View>
                 <TextInput 
-                  secureTextEntry
+                  secureTextEntry={!showPassword}
                   value={password}
                   onChangeText={setPassword}
-                  className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl py-4 pl-14 pr-4 font-bold"
+                  className="w-full bg-slate-950 border border-slate-800 text-white rounded-2xl py-4 pl-14 pr-12 font-bold"
                 />
+                <TouchableOpacity
+                  onPress={() => setShowPassword((v) => !v)}
+                  className="absolute right-4 top-4"
+                >
+                  {showPassword ? (
+                    <EyeOff size={20} color="#64748B" />
+                  ) : (
+                    <Eye size={20} color="#64748B" />
+                  )}
+                </TouchableOpacity>
               </View>
             </View>
+
+            <TouchableOpacity
+              onPress={() => setRememberMe((v) => !v)}
+              className="flex-row items-center gap-3 mt-2"
+              activeOpacity={0.8}
+            >
+              <View
+                className="w-5 h-5 rounded border items-center justify-center"
+                style={{
+                  backgroundColor: rememberMe ? '#00BCD4' : '#020617',
+                  borderColor: rememberMe ? '#00BCD4' : '#475569',
+                }}
+              >
+                {rememberMe && <Check size={12} color="#0A0E1A" strokeWidth={3} />}
+              </View>
+              <Text className="text-slate-400 text-xs font-bold uppercase tracking-widest">
+                Remember me (30 jours)
+              </Text>
+            </TouchableOpacity>
 
             <TouchableOpacity 
               onPress={handleLogin}
@@ -134,7 +201,8 @@ export default function LoginScreen() {
           </View>
         </View>
 
-      </View>
-    </ScrollView>
+        </View>
+      </ScrollView>
+    </KeyboardAvoidingView>
   );
 }

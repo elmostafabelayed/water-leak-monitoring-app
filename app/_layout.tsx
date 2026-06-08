@@ -1,4 +1,4 @@
-import React, { useEffect } from 'react';
+import React, { useEffect, useState } from 'react';
 import FontAwesome from '@expo/vector-icons/FontAwesome';
 import { DarkTheme, DefaultTheme, ThemeProvider } from '@react-navigation/native';
 import { useFonts } from 'expo-font';
@@ -7,10 +7,12 @@ import * as SplashScreen from 'expo-splash-screen';
 import 'react-native-reanimated';
 
 import { useColorScheme } from '@/components/useColorScheme';
-import { WaterProvider } from '../context/WaterContext';
 import { AuthProvider, useAuth } from '../context/AuthContext';
+import LeakAlertOverlay from '../components/LeakAlertOverlay';
+import Toast from '../components/Toast';
 import { router, useSegments } from 'expo-router';
 import '../global.css';
+import AppErrorBoundary from '../components/AppErrorBoundary';
 
 export {
   // Catch any errors thrown by the Layout component.
@@ -26,6 +28,7 @@ export const unstable_settings = {
 SplashScreen.preventAutoHideAsync();
 
 export default function RootLayout() {
+  const [appKey, setAppKey] = useState(0);
   const [loaded, error] = useFonts({
     SpaceMono: require('../assets/fonts/SpaceMono-Regular.ttf'),
     ...FontAwesome.font,
@@ -47,27 +50,29 @@ export default function RootLayout() {
   }
 
   return (
-    <AuthProvider>
-      <RootLayoutNav />
-    </AuthProvider>
+    <AppErrorBoundary key={appKey} onReset={() => setAppKey((k) => k + 1)}>
+      <AuthProvider>
+        <RootLayoutNav />
+      </AuthProvider>
+    </AppErrorBoundary>
   );
 }
 
 function RootLayoutNav() {
   const colorScheme = useColorScheme();
-  const { user, isLoading } = useAuth();
+  const { user, isLoading, toastMessage, clearToast } = useAuth();
   const segments = useSegments();
 
   useEffect(() => {
     if (isLoading) return;
 
-    const inAuthGroup = segments[0] === '(tabs)';
+    const routeRoot = segments[0];
+    const isAuthScreen = routeRoot === 'login' || routeRoot === 'register';
+    const isProtected = !isAuthScreen;
 
-    if (!user && inAuthGroup) {
-      // Redirect to login if not authenticated and trying to access tabs
+    if (!user && isProtected) {
       router.replace('/login');
-    } else if (user && !inAuthGroup) {
-      // Redirect to tabs if authenticated and trying to access login/register
+    } else if (user && isAuthScreen) {
       router.replace('/(tabs)');
     }
   }, [user, isLoading, segments]);
@@ -77,11 +82,11 @@ function RootLayoutNav() {
   }
 
   return (
-    <WaterProvider>
-      <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
-        <StackScreen />
-      </ThemeProvider>
-    </WaterProvider>
+    <ThemeProvider value={colorScheme === 'dark' ? DarkTheme : DefaultTheme}>
+      <Toast message={toastMessage} onHide={clearToast} />
+      <StackScreen />
+      <LeakAlertOverlay />
+    </ThemeProvider>
   );
 }
 

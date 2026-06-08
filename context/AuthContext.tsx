@@ -1,7 +1,7 @@
-import React, { createContext, useContext, useState, useEffect } from 'react';
+import React, { createContext, useContext, useEffect, useMemo, useState } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { Platform } from 'react-native';
-import { API_URL } from '../constants/Config';
+import api, { unwrap } from '../services/ApiService';
 
 const storage = {
   getItem: async (key: string): Promise<string | null> => {
@@ -42,12 +42,15 @@ const storage = {
 interface User {
   email: string;
   name?: string;
+  role?: string;
 }
 
 interface AuthContextType {
   user: User | null;
   isLoading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  toastMessage: string | null;
+  clearToast: () => void;
+  login: (email: string, password: string, rememberMe: boolean) => Promise<void>;
   register: (email: string, password: string, name: string) => Promise<void>;
   logout: () => Promise<void>;
 }
@@ -57,81 +60,111 @@ const AuthContext = createContext<AuthContextType | undefined>(undefined);
 export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
+  const [toastMessage, setToastMessage] = useState<string | null>(null);
+
+  const clearToast = useMemo(() => () => setToastMessage(null), []);
+
+  const logoutLocal = useMemo(
+    () => async () => {
+      await Promise.all([
+        storage.removeItem('@auth_token'),
+        storage.removeItem('@auth_token_expires_at'),
+        storage.removeItem('@user_info'),
+      ]);
+      setUser(null);
+    },
+    []
+  );
+
 
   // Load session on startup
   useEffect(() => {
     async function loadSession() {
       try {
-        const storedUser = await storage.getItem('@user_session');
-        if (storedUser) {
-          setUser(JSON.parse(storedUser));
+        const token = await storage.getItem('@auth_token');
+        const expiresAtRaw = await storage.getItem('@auth_token_expires_at');
+
+        if (!token) {
+          return;
         }
+
+        if (expiresAtRaw) {
+          const expiresAt = Number(expiresAtRaw);
+          if (!Number.isNaN(expiresAt) && Date.now() > expiresAt) {
+            await logoutLocal();
+            return;
+          }
+        }
+
+        const meRes = await api.get('/api/auth/me');
+        const me = unwrap(meRes);
+        await storage.setItem('@user_info', JSON.stringify(me));
+        setUser(me);
       } catch (e) {
-        console.error("Failed to load session", e);
+        await logoutLocal();
       } finally {
         setIsLoading(false);
       }
     }
     loadSession();
-  }, []);
+  }, [logoutLocal]);
 
-  const login = async (email: string, password: string) => {
+  const login = async (email: string, password: string, rememberMe: boolean) => {
     try {
-      const response = await fetch(`${API_URL}/login`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ email, password }),
-      });
+      const response = await api.post('/api/auth/login', { email, password, remember_me: rememberMe });
+      const result = unwrap(response);
 
-      const data = await response.json();
+      const token = result?.token;
+      const userInfo = result?.user;
+      if (!token || !userInfo) throw new Error('Données manquantes');
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Login failed');
-      }
+      const ttlDays = rememberMe ? 30 : 1;
+      const expiresAt = Date.now() + ttlDays * 24 * 60 * 60 * 1000;
 
-      await storage.setItem('@user_session', JSON.stringify(data.user));
-      await storage.setItem('@auth_token', data.access_token);
-      setUser(data.user);
+      await storage.setItem('@auth_token', token);
+      await storage.setItem('@auth_token_expires_at', String(expiresAt));
+      await storage.setItem('@user_info', JSON.stringify(userInfo));
+      setUser(userInfo);
     } catch (e) {
-      console.error("Login failed", e);
       throw e;
     }
   };
 
   const register = async (email: string, password: string, name: string) => {
     try {
-      const response = await fetch(`${API_URL}/register`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
-        body: JSON.stringify({ name, email, password }),
-      });
+      const response = await api.post('/api/auth/register', { name, email, password });
+      const result = unwrap(response);
 
-      const data = await response.json();
+      const token = result?.token;
+      const userInfo = result?.user;
+      if (!token || !userInfo) throw new Error('Données manquantes');
 
-      if (!response.ok) {
-        throw new Error(data.message || 'Registration failed');
-      }
+      const expiresAt = Date.now() + 24 * 60 * 60 * 1000;
 
-      await storage.setItem('@user_session', JSON.stringify(data.user));
-      await storage.setItem('@auth_token', data.access_token);
-      setUser(data.user);
+      await storage.setItem('@auth_token', token);
+      await storage.setItem('@auth_token_expires_at', String(expiresAt));
+      await storage.setItem('@user_info', JSON.stringify(userInfo));
+      setUser(userInfo);
     } catch (e) {
-      console.error("Registration failed", e);
       throw e;
     }
   };
 
   const logout = async () => {
     try {
-      await storage.removeItem('@user_session');
-      setUser(null);
+      try {
+        await api.post('/api/auth/logout');
+      } catch {
+        // ignore
+      }
+      await logoutLocal();
     } catch (e) {
-      console.error("Logout failed", e);
+      await logoutLocal();
     }
   };
 
   return (
-    <AuthContext.Provider value={{ user, isLoading, login, register, logout }}>
+    <AuthContext.Provider value={{ user, isLoading, toastMessage, clearToast, login, register, logout }}>
       {children}
     </AuthContext.Provider>
   );
