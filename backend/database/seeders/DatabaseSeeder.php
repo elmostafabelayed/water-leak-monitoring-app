@@ -19,12 +19,12 @@ class DatabaseSeeder extends Seeder
             'email' => 'test@example.com',
         ]);
 
-        WaterReading::factory()
-            ->count(500)
-            ->create(['user_id' => $user->id]);
+        // WaterReading::factory()
+        //     ->count(500)
+        //     ->create(['user_id' => $user->id]);
 
-        LeakEvent::factory()
-            ->count(20)
-            ->create(['user_id' => $user->id]);
+        // LeakEvent::factory()
+        //     ->count(20)
+        //     ->create(['user_id' => $user->id]);
     }
 }

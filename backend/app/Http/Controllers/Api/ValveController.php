@@ -28,22 +28,20 @@ class ValveController extends BaseApiController
             'triggered_by' => 'USER',
         ]);
 
-        $latest = WaterReading::where('user_id', $userId)->latest()->first();
-        if ($latest) {
-            $latest->update([
-                'valve_status' => $action === 'open' ? 'open' : 'closed',
-            ]);
-        }
+        // Tell the ESP32 what to do next time it pings
+        \Illuminate\Support\Facades\Cache::put('target_valve_state', $action, now()->addMinutes(5));
 
         return $this->success(['action' => $action]);
     }
 
     public function status(Request $request)
     {
-        $userId = $request->user()->id;
-        $latest = WaterReading::where('user_id', $userId)->latest()->first();
+        $latest = \App\Models\WaterData::latest()->first();
+        
+        // If we have a pending target state, we can return that so the UI updates immediately,
+        // or just return the actual hardware state. Let's return actual hardware state.
         return $this->success([
-            'valve_status' => $latest?->valve_status ?? 'open',
+            'valve_status' => $latest && $latest->valve_open ? 'open' : 'closed',
             'updated_at' => $latest?->updated_at?->toIso8601String(),
         ]);
     }

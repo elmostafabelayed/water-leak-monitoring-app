@@ -12,10 +12,14 @@ class WaterDataController extends Controller
     public function store(Request $request)
     {
         $validator = Validator::make($request->all(), [
+            'device_id' => 'nullable|string',
             'flow_rate' => 'required|numeric',
             'total_liters' => 'required|numeric',
+            'status' => 'required|string',
+            'valve_open' => 'required|boolean',
+            'mode' => 'required|string',
             'leak_detected' => 'required|boolean',
-            'valve_status' => 'required|in:open,closed',
+            'force_notify' => 'nullable|boolean',
         ]);
 
         if ($validator->fails()) {
@@ -28,10 +32,22 @@ class WaterDataController extends Controller
 
         $waterData = WaterData::create($request->all());
 
+        $targetState = \Illuminate\Support\Facades\Cache::get('target_valve_state');
+        $command = null;
+        if ($targetState) {
+            $currentState = $request->boolean('valve_open') ? 'open' : 'close';
+            if ($targetState !== $currentState) {
+                $command = $targetState;
+            } else {
+                \Illuminate\Support\Facades\Cache::forget('target_valve_state');
+            }
+        }
+
         return response()->json([
             'status' => 'success',
             'message' => 'Data saved successfully',
-            'data' => $waterData
+            'data' => $waterData,
+            'command' => $command
         ], 201);
     }
 

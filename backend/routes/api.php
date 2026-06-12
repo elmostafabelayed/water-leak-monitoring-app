@@ -21,6 +21,8 @@ Route::middleware('throttle:60,1')->group(function () {
         });
     });
 
+    Route::post('/water-data', [\App\Http\Controllers\Api\WaterDataController::class, 'store']);
+
     Route::middleware('auth:sanctum')->group(function () {
         Route::get('/sensor/latest', [SensorController::class, 'latest']);
         Route::get('/flow/history', [SensorController::class, 'history']);

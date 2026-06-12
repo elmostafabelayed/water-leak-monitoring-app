@@ -10,10 +10,14 @@ return new class extends Migration
     {
         Schema::create('water_data', function (Blueprint $table) {
             $table->id();
+            $table->string('device_id')->nullable();
             $table->float('flow_rate');
             $table->float('total_liters');
+            $table->string('status')->default('normal');
+            $table->boolean('valve_open')->default(true);
+            $table->string('mode')->default('auto');
             $table->boolean('leak_detected')->default(false);
-            $table->enum('valve_status', ['open', 'closed'])->default('open');
+            $table->boolean('force_notify')->default(false);
             $table->timestamps();
         });
     }
