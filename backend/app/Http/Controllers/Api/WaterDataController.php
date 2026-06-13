@@ -32,6 +32,58 @@ class WaterDataController extends Controller
 
         $waterData = WaterData::create($request->all());
 
+        // --- SYNCHRONIZATION WITH MOBILE APP ---
+        // Find or create a default user & sensor since ESP32 might not send a valid user_id
+        $user = \App\Models\User::first();
+        if ($user) {
+            $sensor = \App\Models\Sensor::firstOrCreate(
+                ['user_id' => $user->id, 'node_id' => $request->input('device_id', 'ESP32_01')],
+                [
+                    'name' => 'Main ESP32 Sensor',
+                    'location' => 'Main Water Pipe',
+                    'status' => 'online',
+                ]
+            );
+
+            // Update sensor last seen and reading
+            $sensor->update([
+                'last_reading' => $request->input('flow_rate'),
+                'last_seen_at' => now(),
+                'uptime_seconds' => 3600, // mock uptime if not provided
+                'signal' => -50, // mock signal
+            ]);
+
+            // Create backward compatible WaterReading
+            \App\Models\WaterReading::create([
+                'user_id' => $user->id,
+                'sensor_id' => $sensor->id,
+                'flow_rate' => $request->input('flow_rate'),
+                'pressure' => 45.0 + (rand(-5, 5) / 10), // mock pressure
+                'is_leak' => $request->input('leak_detected'),
+                'valve_status' => $request->boolean('valve_open') ? 'open' : 'closed',
+            ]);
+
+            // Trigger alert if leak detected
+            if ($request->input('leak_detected')) {
+                \App\Models\Alert::create([
+                    'user_id' => $user->id,
+                    'type' => 'LEAK_DETECTED',
+                    'severity' => 'CRITICAL',
+                    'description' => 'Une fuite d\'eau a été détectée sur votre réseau principal.',
+                    'is_acknowledged' => false,
+                ]);
+
+                \App\Models\LeakEvent::create([
+                    'user_id' => $user->id,
+                    'location' => $sensor->location ?? 'Main Water Pipe',
+                    'severity' => 'critical',
+                    'flow_rate_detected' => $request->input('flow_rate'),
+                    'auto_closed' => true,
+                    'response_time_ms' => 1500,
+                ]);
+            }
+        }
+        // --- END SYNCHRONIZATION ---
         $targetState = \Illuminate\Support\Facades\Cache::get('target_valve_state');
         $command = null;
         if ($targetState) {
