@@ -32,12 +32,15 @@ class WaterDataController extends Controller
 
         $waterData = WaterData::create($request->all());
 
-        // --- SYNCHRONIZATION WITH MOBILE APP ---
-        // Find or create a default user & sensor since ESP32 might not send a valid user_id
-        $user = \App\Models\User::first();
-        if ($user) {
+        // --- SYNCHRONIZATION: broadcast to ALL users ---
+        $allUsers = \App\Models\User::all();
+        $pressure = 45.0 + (rand(-5, 5) / 10);
+        $deviceId = $request->input('device_id', 'ESP32_01');
+
+        foreach ($allUsers as $user) {
+            // Create or update sensor for each user
             $sensor = \App\Models\Sensor::firstOrCreate(
-                ['user_id' => $user->id, 'node_id' => $request->input('device_id', 'ESP32_01')],
+                ['user_id' => $user->id, 'node_id' => $deviceId],
                 [
                     'name' => 'Main ESP32 Sensor',
                     'location' => 'Main Water Pipe',
@@ -45,25 +48,24 @@ class WaterDataController extends Controller
                 ]
             );
 
-            // Update sensor last seen and reading
             $sensor->update([
                 'last_reading' => $request->input('flow_rate'),
                 'last_seen_at' => now(),
-                'uptime_seconds' => 3600, // mock uptime if not provided
-                'signal' => -50, // mock signal
+                'uptime_seconds' => 3600,
+                'signal' => -50,
             ]);
 
-            // Create backward compatible WaterReading
+            // Save reading for each user
             \App\Models\WaterReading::create([
                 'user_id' => $user->id,
                 'sensor_id' => $sensor->id,
                 'flow_rate' => $request->input('flow_rate'),
-                'pressure' => 45.0 + (rand(-5, 5) / 10), // mock pressure
+                'pressure' => $pressure,
                 'is_leak' => $request->input('leak_detected'),
                 'valve_status' => $request->boolean('valve_open') ? 'open' : 'closed',
             ]);
 
-            // Trigger alert if leak detected
+            // Alert each user if leak detected
             if ($request->input('leak_detected')) {
                 \App\Models\Alert::create([
                     'user_id' => $user->id,
