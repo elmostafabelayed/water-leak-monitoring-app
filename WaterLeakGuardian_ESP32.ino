@@ -1,23 +1,24 @@
 #include <Arduino.h>
 #include <WiFi.h>
 #include <HTTPClient.h>
-#include <ArduinoJson.h> // ⚠️ T2AKED T-INSTALLI HAD L'LIBRARY F ARDUINO IDE ⚠️
+#include <ArduinoJson.h>
 
 // ============================================================
 // CONFIGURATION
 // ============================================================
 
 // --- WIFI ---
-#define WIFI_SSID "CAFE AUSTIN 3"
-#define WIFI_PASSWORD "60606060"
+#define WIFI_SSID "Mokalux_6G"
+#define WIFI_PASSWORD "987654321"
+#define LEAK_CRITICAL_THRESHOLD 15.0
 
 // --- API ---
 // Badl l'IP b l'IP dyal pc dyalk, w t2kd bli rak mdemarri l'backend b: 
 // php artisan serve --host=0.0.0.0 --port=8000
-String serverName = "http://192.168.0.239:8000/api/water-data";
+String serverName = "http://192.168.11.127:8000/api/water-data";
 
 // --- GPIO ---
-#define PIN_FLOW_SENSOR 14
+#define PIN_FLOW_SENSOR 22
 #define PIN_RELAY 23
 
 // --- RELAY TYPE: ACTIVE-LOW ---
@@ -43,9 +44,9 @@ SystemMode currentMode = MODE_AUTO;
 // ============================================================
 // LEAK DETECTION
 // ============================================================
-#define LEAK_SMALL_THRESHOLD     1.0
-#define LEAK_CRITICAL_THRESHOLD  15.0
-#define LEAK_SMALL_CONFIRM_MS    60000
+// للـ demo فقط — اعتبر أي flow < 5 L/min هو "تسرب صامت"
+#define LEAK_SMALL_THRESHOLD     5.0    // بدل 1.0
+#define LEAK_SMALL_CONFIRM_MS    8000   // 8 ثواني بدل 60#define LEAK_CRITICAL_THRESHOLD  15.0
 #define LEAK_CRITICAL_CONFIRM_MS 500
 #define CONTINUOUS_USAGE_MS      1200000
 
@@ -197,33 +198,30 @@ void sendToAPI(bool forceNotification = false) {
 // ============================================================
 void detectLeak(unsigned long now) {
 
-  // لا يوجد تدفق
-  if (flowRate < 0.1) {
-    if (currentStatus != STATUS_NORMAL) {
-      currentStatus = STATUS_NORMAL;
-      leakDetected = false;
+  // لا يوجد تدفق — أو noise صغير جداً
+  if (flowRate < 0.05) {
+    // فقط نريسيت إلا كنا في NORMAL أصلاً أو continuous
+    // نبقاو نحافظ على smallLeakStart إلا كنا في suspected
+    if (currentStatus == STATUS_NORMAL || currentStatus == STATUS_CONTINUOUS_USAGE) {
       flowStartTime = 0;
       smallLeakStart = 0;
     }
+    // إلا كان STATUS_LEAK_SUSPECTED — ما نمحيوش العداد
+    // نبقاو نشوفو — التسرب الصامت غالباً ما يوقفش تماماً
     return;
   }
 
   // تسرب حرج
   if (flowRate > LEAK_CRITICAL_THRESHOLD) {
     if (flowStartTime == 0) flowStartTime = now;
-
     if (now - flowStartTime >= LEAK_CRITICAL_CONFIRM_MS) {
       currentStatus = STATUS_CRITICAL_LEAK;
       leakDetected = true;
       Serial.println("🚨 CRITICAL LEAK!");
-
       if (currentMode == MODE_AUTO) {
         closeValve();
         Serial.println("   → [AUTO] Valve CLOSED");
-      } else {
-        Serial.println("   → [MANUAL] NOTIFY ONLY");
       }
-
       if (now - lastNotification >= NOTIFICATION_COOLDOWN_MS || lastNotification == 0) {
         sendToAPI(true);
         lastNotification = now;
@@ -232,22 +230,22 @@ void detectLeak(unsigned long now) {
     return;
   }
 
-  // تسرب صامت
-  if (flowRate > 0.1 && flowRate < LEAK_SMALL_THRESHOLD) {
+  // تسرب صامت — الأهم: ما نريستيش smallLeakStart بسبب تذبذب صغير
+  if (flowRate >= 0.05 && flowRate < LEAK_SMALL_THRESHOLD) {
     if (smallLeakStart == 0) smallLeakStart = now;
+    currentStatus = STATUS_LEAK_SUSPECTED;
+
+    Serial.print("[SILENT LEAK] Timer: ");
+    Serial.print((now - smallLeakStart) / 1000);
+    Serial.println("s");
 
     if (now - smallLeakStart >= LEAK_SMALL_CONFIRM_MS) {
-      currentStatus = STATUS_LEAK_SUSPECTED;
       leakDetected = true;
-      Serial.println("⚠️ SUSPECTED LEAK");
-
+      Serial.println("⚠️ SUSPECTED LEAK CONFIRMED!");
       if (currentMode == MODE_AUTO) {
         closeValve();
         Serial.println("   → [AUTO] Valve CLOSED");
-      } else {
-        Serial.println("   → [MANUAL] NOTIFY ONLY");
       }
-
       if (now - lastNotification >= NOTIFICATION_COOLDOWN_MS || lastNotification == 0) {
         sendToAPI(true);
         lastNotification = now;
@@ -256,14 +254,14 @@ void detectLeak(unsigned long now) {
     return;
   }
 
-  // استخدام مستمر
+  // استخدام عادي
   if (flowRate >= LEAK_SMALL_THRESHOLD && flowRate <= LEAK_CRITICAL_THRESHOLD) {
+    smallLeakStart = 0; // نريسيت التسرب الصامت — الماء يجري بشكل طبيعي
     if (flowStartTime == 0) flowStartTime = now;
+    currentStatus = STATUS_NORMAL;
 
     if (now - flowStartTime >= CONTINUOUS_USAGE_MS) {
       currentStatus = STATUS_CONTINUOUS_USAGE;
-      Serial.println("⏰ CONTINUOUS USAGE");
-
       if (now - lastNotification >= NOTIFICATION_COOLDOWN_MS || lastNotification == 0) {
         sendToAPI(true);
         lastNotification = now;

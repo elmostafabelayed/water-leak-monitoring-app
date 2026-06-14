@@ -80,7 +80,7 @@ export default function DashboardScreen() {
 
   useEffect(() => {
     fetchDashboard();
-    pollRef.current = setInterval(() => fetchDashboard({ silent: true }), 10000);
+    pollRef.current = setInterval(() => fetchDashboard({ silent: true }), 2000);
     return () => {
       if (pollRef.current) clearInterval(pollRef.current);
     };

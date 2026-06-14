@@ -72,7 +72,11 @@ export default function MonitoringScreen() {
   }, [fetchSensors, fetchDeviceInfo]);
 
   useEffect(() => {
-    if (selectedSensorId) fetchSensorData(selectedSensorId);
+    if (selectedSensorId) {
+      fetchSensorData(selectedSensorId);
+      const interval = setInterval(() => fetchSensorData(selectedSensorId), 2000);
+      return () => clearInterval(interval);
+    }
   }, [selectedSensorId, fetchSensorData]);
 
   const onRefresh = useCallback(async () => {
